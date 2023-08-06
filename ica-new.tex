@@ -1,0 +1,523 @@
+\documentclass{beamer}
+\usetheme{Singapore}
+\DeclareMathOperator*{\argmin}{argmin}
+\newcommand{\bcol}[1]{{\color{blue}{#1}}}  
+\newcommand{\half}{ {\scriptstyle \frac{1}{2} }  }
+\usepackage{enumitem}
+\usepackage{multimedia}
+%\usepackage[export]{adjustbox}
+%\makeatletter
+%\colorlet{beamer@blendedblue}{orange!0!black}
+%\makeatother
+\usepackage{bm}
+\newcommand{\defeq}{\mathrel{\mathop:}=}
+\newcommand{\vnorm}[1]{\left|\left|#1\right|\right|}
+\newcommand{\enorm}[1]{\Vert #1 \Vert_2}
+\newcommand{\prox}{\mathop{\mathrm{prox}}}
+
+%%%%%%%%%%%%%%%%%%%
+% Intro Detail -- Make sure the Date is right
+%%%%%%%%%%%%%%%%%%%
+
+	
+\title{Data Augmentation for  Bayesian ICA}
+\author{Jyotishka Datta and Nick Polson}
+\institute{VT and University of Chicago}
+\date{July 2023}
+
+
+\begin{document}
+	
+\frame{\titlepage}
+	
+\section{Introduction}
+%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%
+
+\begin{frame}
+\frametitle{Overview}
+\footnotesize
+
+Blind Source Separation (BSS) or independent component analysis (ICA)
+
+Non-Gaussian can do separation
+
+\begin{itemize}
+\item MacKay MLE algorithm
+\item FastICA. Pre-whitening etc
+\item Ono-Miyake  auxiliary algorithm
+\item Godsill MCMC algorithm (in case with noise)
+\end{itemize}
+
+Our goal: Scale mixture of Normals framework
+
+\vspace{0.1in} 
+
+Allows full MCMC, fast proximal algorithms, EM algorithms
+
+P\'olya Gamma provides MCMC version of MacKay
+
+Proximal/EM version of Ono (Geman and Yang, envelope methods).
+
+\end{frame}
+\begin{frame}
+\frametitle{Scale Mixtures Normal (Polson and Scott, 2012)}
+
+\footnotesize
+
+Source prior is important. Scale mixtures of normals!  
+
+\vspace{0.1in} 
+
+Super-Gaussian heavy tails 
+\begin{itemize}
+\item Finite Gaussian mixtures (Palmer et al)
+\item $ 1 /\cosh $.  P\'olya/Gamma (Logistic). Log transform of Horseshoe 
+\item $t$-distribution (Godsill)
+\item Auxiliary methods:  let you speed up convergence 
+\end{itemize}
+
+MM and MCMC available with latent variable representation
+\end{frame}
+
+\begin{frame}
+\frametitle{Mixtures and Envelopes}
+\footnotesize
+
+Mixture: $ p( x  ) = \int p( x , \lambda ) d \lambda $
+
+\vspace{0.1in}
+Envelope: $ p( x) = \sup_{\lambda > 0} p( x , \lambda )  $ 
+
+\vspace{0.1in}
+$ \lambda $ is an  auxiliary variable. Geman and Yang 
+
+\vspace{0.1in}
+Link with Proximal Algorithms/sub-differentials/EM if differentiable
+
+\vspace{0.1in}
+Speeds up ICA algorithms.  
+
+\vspace{0.1in}
+Gradient based avoids matrix inversion and auxiliary variables dynamically adjusts step-sizes.
+Lets you perform large step sizes at the beginning. Fast convergence.
+
+\vspace{0.1in}
+Can add Nesterov acceleration. 
+
+\end{frame}
+\begin{frame}
+\frametitle{Mixtures and Envelopes}
+\footnotesize
+
+Envelope approach--- generalises Ono-Miyake
+$$
+e^{ - \phi (x ) } = \sup_{ \lambda \geq 0 } N ( x | 0 , \lambda^{-1} ) p_E ( \lambda ) 
+$$
+where
+$\phi( x ) = \theta ( x^2 / 2 ) = \inf_{\lambda \geq 0 } \left\{ \half \lambda x^2 - \theta^\star ( \lambda ) \right\} $.
+
+\vspace{0.1in}
+Then $ \hat{\lambda} = \phi^\prime ( x ) / x $ and $ E( \lambda | x ) =  = \phi^\prime ( x ) / x $ 
+
+\vspace{0.1in}
+Iterative Algorithm
+\begin{align*}
+x^{(t+1)} &= \arg_x \min_\lambda \left\{ \half ( y-x )^2 + \half \lambda^{(t)}  x^2 \right \}  \\
+\lambda^{(t+1)} &=  \phi^\prime ( x^{(t+1)} ) / x^{(t+1)} \\
+\end{align*}
+Auxiliary EM. 
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\frametitle{Half Quadratic Envelopes}
+
+\footnotesize
+Half quadratic envelope:
+$$ 
+f(w) = \inf_v \left \{ f(v) + \nabla f(v)^\top (w-v) + \frac{L(v)}{2} \vnorm{w-v}^2 \right \} 
+$$
+
+\begin{itemize}
+\item
+Common case $ L(v)=L$. 
+Flexible choice $ L \preceq L(v) = ( \nabla f(v) + \kappa ) / v $. 
+
+\item \bcol{ICM Algorithm:}
+Marginal mode $ w^\star \defeq \arg \min_w F(w) $ as a joint mode
+$$ 
+\min_{w,v} \left \{ F(w,v) + \frac{L(v)}{2} \vnorm{w-v}^2  \right \} 
+$$
+where $F(w,v) =  f(v) + \nabla f(v)^\top ( w- v) + \phi( w ) $
+\item 
+Sequence: $v_t = w_t$, and iterate
+$$
+w_{t+1} =  argmin_w \left \{ F(w , v_t ) + \frac{L(v_t)}{2} \vnorm{w-v_t}^2 \right \} 
+$$
+\item
+Acceleration with $v_t$ a convex combination of $w_t$ and past $ w_{t-1} $.
+\end{itemize}
+
+\end{frame}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+  \frametitle{Proximal Operator}
+
+  \footnotesize
+  \bcol{Moreau envelope}, $E_{\gamma \phi}(x)$, and \bcol{proximal operator} $\prox_{\gamma \phi} (x)$ 
+  \begin{eqnarray*}
+  E_{\gamma \phi} (x) &=& \inf_{z } \left\{\frac{1}{2\gamma} \enorm{z - x}^2  + \phi(z)  \right\}  \leq \phi(x) \\
+  \prox_{\gamma \phi} (x) &=& \arg \min_{z } \left\{ \frac{1}{2\gamma} \enorm{z - x}^2  + \phi(z)  \right\} \, .
+  \end{eqnarray*}
+  Balances goals of minimizing $\phi$, and staying near $x$.  
+
+  \begin{itemize}
+  \item Key property
+  $$
+  E_{\gamma \phi} (y) \leq E_{\gamma \phi} (x) - \frac{1}{2 \gamma} \vnorm{x - y}^2 \; \; {\rm where} \; \;  y=v, x=  \prox_{\gamma \phi} (v) \; .
+  $$
+  By definition, 
+  $$  E_{\gamma \phi} \left (\prox_{\gamma \phi} (v) \right ) = \inf_y \left \{ \frac{L(y)}{2} \enorm{y - \prox_{\gamma \phi} (v)}^2 
+   + \phi(y) \right \} $$ 
+  \item A $3$-point inequality
+  \tiny
+  $$
+  \phi \left ( \prox_{\gamma \phi} (v) \right ) + \frac{L(\prox_{\gamma \phi} (v) )}{2} \enorm{\prox_{\gamma \phi} (v) - v}^2 \leq \phi ( y ) 
+  + \frac{L(y)}{2} \enorm{y - \prox_{\gamma \phi} (v)}^2 
+   - \frac{L}{2} \enorm{\prox_{\gamma \phi} (v) - v}^2 \; .
+  $$
+  \end{itemize}
+
+\end{frame}
+
+
+
+\section{ICA}
+\begin{frame}
+\frametitle{Example: MacKay ICA Model}
+\footnotesize
+
+Blind source separation (MacKay, 1998)
+
+\vspace{0.1in} 
+
+Observe linear mixtures (with unknown coefficients $\bm V$) of the source signals
+
+\vspace{0.1in} 
+
+We attempt to recover source signals $\bm s$ from observations $\bm x$ which are linear mixtures (with unknown coefficients $\bm V$) of the source signals
+\begin{align*}
+\bm x &= \bm Vs\\
+\bm W &= \bm V^{-1}
+\end{align*}
+Likelihood: use the Dirac integral $ p( x) = \int \delta  ( x - v s ) f(s) d s = | v|^{-1} f( v^{-1} s ) $
+
+\vspace{0.1in}
+
+Hence, given source prior $p_i(s)$, you can re-cover $ V^{-1}$ from 
+$$
+p( \bm x |V ) = \prod_{i=1}^n | det ( V) |^{-1}  p_i ( V^{-1}  \bm s  ) .
+$$
+MacKay covariant algorithm. Welling EM 
+
+\vspace{0.1in}
+
+Our approach: MCMC/EM by exploiting $p_i(s) $ a PG-mixture of normals. 
+
+\end{frame}
+
+\begin{frame}
+\begin{center}
+\bcol{ MacKay $ \cosh ( s ) $ model }
+\end{center}
+\footnotesize
+
+The common approach is a $ \cosh $-prior. Transformation of horseshoe. 
+
+\vspace{0.1in}
+
+First, write $s$ as a scale mixture of normals
+\begin{equation}
+s|\tau \sim N \left (0, \frac{1}{\tau} \right ),\; \tau \sim PG(1,0)
+\end{equation}
+due to the following 
+\begin{equation}
+\frac{1}{\cosh(s)} = \int_{0}^{\infty} e^{-\half \tau s^2}p(\tau) d\tau.
+\end{equation}
+Therefore, the location parameter $\theta$ is also a normal scale mixture,
+\begin{align}
+\theta|v,\tau \sim N\left(0, \frac{v^2}{4\tau}\right),\; v\sim p(v), \tau\sim PG(1,0)
+\end{align}
+
+Hence this leads to simple MCMC/EM algorithms
+$$
+V | \tau. \; {\rm and} \; \tau | V 
+$$
+No need to simulate $ \bm s $. Marginalised out. 
+\end{frame}
+
+
+\begin{frame}
+\begin{center}
+\bcol{ $ \cosh^{1/\beta} ( s ) $ extension}
+\end{center}
+\footnotesize
+
+Hadamard products for $ \cosh $ is 
+$$
+\cosh (s) = \prod_{i=1}^\infty \left ( 1 + \frac{s^2}{(n-\half)^2 \pi^2} \right )
+$$
+Define GGC random variables (Devroye and Biane, Pitman and Yor)
+$$
+C_1  \stackrel{D}{=}  \sum_{n=1}^\infty \frac{ \Gamma_{1,n} }{ \left ( n - \frac{1}{2} \right )^2 }  \; \; {\rm with} \; \; \mathbb{E} \left ( e^{ - \half s^2 C_1 } \right ) = \frac{1}{ \cosh  (s) } .
+$$
+The $ PG(b,0) $ distribution satisfies: $ E ( \exp( - \omega t ) ) = 1 / \cosh^b ( \sqrt{ t / 2} ) $ where
+$$
+\omega = \frac{1}{2 \pi^2 } \sum_{k=1}^\infty \frac{ Ga(b,1 ) }{ ( k - \half )^2 } 
+$$
+Double exponential (Lasso) in the limit as $ \beta  \rightarrow 0 $.
+
+
+
+\end{frame}
+\section{Proximal ICA}
+
+
+
+\begin{frame}
+\frametitle{Proximal Version of MacKay}
+\footnotesize
+
+Maximize the likelihood $p(\bm{x} | \bm{V})$ after integrating out $\bm{s}$ (or $\bm{\tau}$ in our model).
+
+\vspace{0.2in}
+The update in each step is 
+$$
+\Delta (v^{-1}) \propto v - \tanh(v^{-1}x)\cdot x
+$$
+
+Simulation performance: recover $\bm{s}$ quite well in most settings (the recovered signals have correlations $>0.9$ with the true ones.)
+
+\vspace{0.1in} 
+
+Update rule is simply MM 
+\end{frame}
+
+\begin{frame}
+\frametitle{Ono-Miyake Algorithm}
+\footnotesize
+
+
+\end{frame}
+
+\begin{frame}
+\frametitle{EM algorithm}
+\footnotesize
+
+Latent variable moment given by 
+\begin{align}
+E[\bm{\tau} | \bm{x, V}] &= \frac{1}{4V_{ij}^{-1} x_j} \frac{e^{2V_{ij}^{-1} x_j}-1}{e^{2V_{ij}^{-1} x_j} + 1}\\
+\log P(\bm{x} | \bm{\tau,V}) &= C - \log |det\bm{V}| +  \sum_{i=1}^n \log   p(V_{ij}^{-1} x_j | \tau_i)
+\end{align}
+\footnotesize
+\begin{itemize}
+\item E-step: Calculate $E[\bm{\tau} | \bm{x, V}]$. $\bm{\tau}$ is an exponentially tilted Polya-Gamma.
+\item M-step: Update $\bm{V}$ by maximizing $\log P(\bm{x} | \bm{V}, E[\bm{\tau} | \bm{x, V}])$. The only difference with MacKay is in $z_i$. 
+$$
+z_i =\frac{d\log p(a_i|\tau_i)}{da_i} = \frac{d}{da_i} \left\{-\frac{4\tau_i}{2} a_i^2\right\} =-4\tau_ia_i
+$$
+\end{itemize}
+
+\end{frame}
+
+
+\section{MCMC ICA}
+\begin{frame}
+\frametitle{Bayes ICA}
+\footnotesize
+
+P\'olya Gamma  version of Godsill et al (2004) $t$-distribution.  
+
+\vspace{0.1in}
+
+MCMC version of MacKay
+
+
+\vspace{0.1in}
+
+Suppose you observe with noise: $ \bm x = A \bm s + \epsilon $ where $ \epsilon \sim N(0,1) $.
+
+\vspace{0.1in}
+
+Godsill et al (2004) use $t$-distribution as an inverse Gamma mixture of normals. 
+When degrees of freedom is small get sparsity. Cauchy prior also popular. 
+
+\begin{itemize}
+\item Add Full conditionals.  See Godsill. 
+\end{itemize}
+
+Mixture of Gaussians source prior. Let's you do sparsity.  
+
+\vspace{0.1in} 
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{MCMC Version of ICA} 
+
+Add Godsill Conditionals 
+
+
+\end{frame}
+\begin{frame}
+
+\frametitle{Posterior of $\bm s$ Given $\bm x$}
+\footnotesize
+
+Exponential family model 
+\begin{align*}
+p(\bm s| \bm x) 
+&= h(\bm s) \exp\left\{\bm{\eta's} - \psi(\bm\eta) \right\}
+\end{align*}
+where
+\begin{align*}
+\bm\eta &= \frac{1}{\sigma^2}\bm{V'x} \\
+h(\bm s) &= \frac{1}{(2\pi \sigma^2)^{q/2}} \exp\left\{-\frac{1}{2\sigma^2} \bm{s'V'Vs}\right\} p(\bm s)\\
+f(\bm x) &= \int  h(\bm s) \exp\left\{\bm{\eta's} - \frac{1}{2\sigma^2}\bm{x'x} \right\} d\bm s\\
+\psi(\bm \eta) &= \frac{1}{2\sigma^2}\bm{x'x} +\log f(\bm x) = \frac{\sigma^2}{2}\bm{\eta'WW'\eta} + \log f(\sigma^2 \bm{W'\eta})
+\end{align*}
+
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Full MCMC (normal prior on $\bm{v}$ elementwise)}
+\footnotesize
+Let $i$ be observation index, $k$ the row index of $v$, $j$ the column index of $v$. $X = SV' + \epsilon$ where $X$ is $n\times d$ and $V$ is $d\times d$. 
+
+\vspace{0.1in} 
+
+For the $i$-th observation, $x_i = V s_i$.
+
+{\footnotesize
+
+\begin{align*}
+s_{ij} | x, v,\tau, s_{ij'} &\sim N\left(\frac{\left(XV-SV'V+S\cdot\text{diag}(V'V)\right)_{ij}}{\text{diag}(V'V)_{jj} + 4\tau_{ij}^2\sigma^2}, \frac{\sigma^2}{\text{diag}(V'V)_{jj} + 4\tau_{ij}^2 \sigma^2}\right) \\
+v_{kj} | x, s, \tau, v_{kj'} &\sim N\left(\frac{\left(X'S-VS'S+V\cdot\text{diag}(S'S)\right)_{kj}}{\text{diag}(S'S)_{jj} + (\sigma/\sigma_2)^2}, \frac{\sigma^2}{\text{diag}(S'S)_{jj} + (\sigma/\sigma_2)^2} \right)\\
+\tau_{ij} | x, s, v &\sim PG(1, |2s_{ij}|)
+\end{align*}
+}
+
+Simulation performance: breaks down when dimension $> 3$.
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Posterior Mean}
+\footnotesize
+Tweedie formula (Efron, 2012).  
+\begin{align*}
+E(\bm s | \bm x) &= \frac{\partial\psi(\bm\eta)}{\partial \bm\eta}\\
+&= \bm{Wx} + \sigma^2\bm W\frac{\partial}{\partial \bm x}\log f(\bm x) \\
+&= \frac{\int h(\bm s)\exp\{\bm{\eta's}\} \bm s d\bm s}{\int h(\bm s)\exp\{\bm{\eta's}\} d\bm s}
+\end{align*}
+Or equivalently, 
+\begin{align*}
+\frac{\partial}{\partial \bm x}\log f(\bm x) &= \frac{1}{\sigma^2}\left(\bm{V} E(\bm s | \bm x) - \bm x\right)
+\end{align*}
+Can use this to interpret the update rule in original algorithm of  Sejnowski and MacKay. 
+
+\vspace{0.1in} 
+
+Predictive mean.   Masreliez.
+\end{frame}
+
+
+\begin{frame}
+\frametitle{1-d Case with Prior on $v$}
+\footnotesize
+
+For illustration only. If the observations are 1-dimensional, then no need to do component analysis (we can just view the observation itself as the single independent component).
+
+\vspace{0.2in}
+
+Suppose $X=\theta + \epsilon \in\mathcal{R}$ with model $f(X-\theta)$ and $\theta$ is a scale mixture. 
+
+When $f$ is $\phi_\sigma$, 
+\begin{align*}
+x|\theta &\sim N(x-\theta, \sigma^2)\\
+\theta &= vs\\
+v &\sim p(v)\\
+s &\sim \frac{1}{\cosh(s)}
+\end{align*}
+\end{frame}
+
+
+
+
+
+\section{Application}
+\begin{frame}
+\frametitle{Simulation}
+\footnotesize
+$n=500, d=4, \sigma = 0.01, \sigma_2 = 1. \epsilon \sim N(0, \sigma^2), v_{ij} \sim N(0, \sigma^2)$. 
+\vspace{0.1in}
+
+{\footnotesize
+Correlations between $ \bm{\hat s}$ and $\bm{s}$ (just one run for illustration):
+\begin{itemize}
+\item MacKay: 0.988, 0.999, 0.997, 0.991
+\item EM: 0.992, 0.997, 0.997, 0.994
+\end{itemize}
+
+\vspace{0.1in}
+Correlations after the noise $\sigma$ is increased to 2.
+\begin{itemize}
+\item MacKay: 0.532, 0.508, 0.665, 0.435
+\item EM: 0.528, 0.521, 0.667, 0.434
+\end{itemize}
+
+\vspace{0.1in}
+Correlations after scaling up the first $\tau$ by 100 times and setting $\sigma = 0.1$.
+\begin{itemize}
+\item MacKay: 0.275, 0.972, 0.837, 0.974
+\item EM: 0.273, 0.973, 0.834, 0.977
+\end{itemize}
+}
+
+EM and MacKay seem to have similar performance in terms of recovering signals.
+\end{frame}
+
+\begin{frame}
+\frametitle{More on the Last Experiment ...}
+\footnotesize
+The data dimension is 4, but the true signal dimension is 3 (the scale of the first $s$ in much smaller than the others). Algorithms can't do automatic model selection. 
+\begin{figure}
+	\centering
+	\includegraphics[width=\linewidth]{s}
+\end{figure}
+\footnotesize
+I was expecting that EM would perform some ``soft" model selection as it calculates the expectation of $\bm{\tau}$, which is directly related to the signal scales. But it doesn't. The calculated values in the experiment are almost independent of true $\bm{\tau}$.
+\end{frame}
+
+\section{Discussion}
+\begin{frame}
+\frametitle{Discussion}
+
+\footnotesize
+
+Potential of generalizing to nonlinear neural network model:
+\begin{itemize}
+\item Perform ICA layer by layer like backpropagation. Start with the output layer, work out the output of the last hidden layer. Then the second last hidden layer.  
+\vspace{0.1in}
+\item The key assumption is that in each layer, all hidden neurons are independent and have a specific distribution.
+\vspace{0.1in}
+\item Advantage compared with Bengio's NICE?
+\end{itemize}
+\end{frame}
+
+
+
+\end{document}

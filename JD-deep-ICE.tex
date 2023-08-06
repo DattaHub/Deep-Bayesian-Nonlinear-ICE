@@ -1,0 +1,510 @@
+\documentclass[11pt]{article}%
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage[round]{natbib}
+\usepackage{amsmath}%
+\usepackage{amsthm}%
+\setcounter{MaxMatrixCols}{30}
+\usepackage{palatino}
+\usepackage{paralist}
+\usepackage{bm}
+\usepackage[top=8pc,bottom=8pc,left=8pc,right=8pc]{geometry}
+\usepackage{mathtools}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+% \newcommand{\half}{ {\scriptstyle \frac{1}{2} }  }
+% \newcommand{\defeq}{\mathrel{\mathop:}=}
+% \newtheorem{theorem}{Lemma}
+
+\input{math-commands}
+
+\singlespace
+
+\begin{document}
+\title{Deep Bayesian Nonlinear ICE}
+
+\author{Jyotishka Datta \\ Department of Statistics \\ Virginia Tech \and Nicholas G. Polson\\
+Booth School of Business\\University of Chicago\thanks{Nicholas G. Polson is Professor of Econometrics and Statistics at the Booth School of Business,
+University of Chicago.  }}
+
+\date{First Draft: April 2023\\
+This Draft: \today{}}
+
+\maketitle
+
+
+\begin{abstract}
+\noindent This paper provides a latent variable representation of independent component analysis, that enables EM and MCMC algorithms for fast implementation. Our method also applies to flow-based methods for nonlinear feature extraction. We show how to implement conditional posteriors and envelope-based methods for optimization. We unify a number of hitherto disjoint estimation procedures. We illustrate our methodology and algorithms on a simple example. Finally, we conclude with directions for future research. 
+\end{abstract}
+
+\begin{flushleft}
+Key words:  Deep Learning, ICE, factor models, Bayes, Flow models.
+\end{flushleft}
+
+%%%%%%%%%%%%%%----------------------------------------section 1
+\newpage
+\section{Introduction}
+Separating high dimensional data into independent latent factors is central to statistical modelng. 
+For example, linear independent components analysis (ICA) generates data by linearly mixing a lower-dimensional set of independent sources (a.k.a.features). to provide high dimensional probabilistic structure. 
+High dimensional data reduction  methods are then central to modern statistical and machine learning methods as they uncover important data features and good predictive performance.  Such models  require a method that jointly learns both the underlying independent features and mixing weights (a.k.a. nonlinear mixing maps).
+
+Our goal is two-fold. First, to unify hitherto disparate algorithm  procedures to allow for both a fully Bayesian and optimization based MAP. Second, to unify the modeling of sources distributions within the umbrella of scale mixtures of normals (Andrews and Mallows, 1974, West 1987, Carlin and Polson, 1991, Polson and Scott, 2012). This latent variable approach provides 
+fast scalable algorithms as in the auxiliary variable  methods of Ono and Miyake (2017) and, moreover, does not rely on approximate methods such as variational Bayes (VB). 
+Our approach  has implications for deep Bayesian models where latent variable distributions are constructed as  superpositions of nonlinear maps as in  deep learning, see \citep{polson2017deep}.
+
+On the algorithmic side, we show that a number of hitherto disjoint algorithms can be unified as envelope optimisation methods, see Geman and Yang (1991) and \citep{polson2015mixtures}. For example, the ICA updating scheme of  of Bell and Sejowski 1995 is equivalent to maximum likelihood, see \citep{mackay1992bayesian, mackay1996maximum}. Auxiliary variable methods allow for both EM and MCMC algorithms to be develoepd across a wide spectrum of source distributions. ISuch methods can lead to faster convergence (Ono and Miyake, 2001) and can incorporate methods for fast convergence such as Nesterov acceleration and block-coordinate descent. Thus providing an alternative to traditional stochastic gradient descent methods.
+
+On the theoretical side, we consider three types of models 
+\begin{enumerate}
+\item Data generating model for $y$ given a source $s$ of the from 
+$$
+ y | x \sim p( y| x ) \; \; {\rm where} \; \; x= As \; {\rm and} \; s \sim p(s) 
+ $$
+where  $A$ a mixing matrix and $ W = A^{-1} $ needs to be learned.
+Examples include independent components analysis where the source distribution has independent components. 
+For identifiability, the source distribution is assumed to have a super-Gaussian distribution. 
+\item Auto-encoder/Sparsity. The source $s$ is a feature vector that needs to be learned. 
+See, for example,  Field and Olhausen (1996). 
+\item Flow transformation models, where $ y = h(x) $ where $h( \cdot ) $ is typically modeled as an  invertible neural network (INN), with both $p_y$ and $p_F$ Gaussian densities, 
+	\begin{align*}
+		p( y, x | \theta) &= p(y | x, \theta)p(x|\theta)\\
+		&= p_y(y | h^{-1}(x), \theta) p_F(h^{-1}(x)) \Big | \frac{\partial h^{-1}}{\partial x}\Big | 
+	\end{align*}
+	 where the determinant of Jacobian easy to compute. 
+	
+	These models can be thought of as latent factor models. 
+Flow-based methods have been used to construct a nonlinear ICA where the dimensionality of the latent space is equal to the data as in an 
+ auto-encoder approach, see Camuto et al, (2021).
+\end{enumerate}
+A  key insight is that the components of the source  distribution can be modeled with scale mixtures of normals.  We show that MacKay's original model and its extensions are
+simply scale mixtures with P\'olya-Gamma mixing (Polson, Scott and Windle, 2013). 
+
+The purpose then is three-fold
+\begin{itemize}
+\item Develop full Bayesian methods for ICA
+\item Unify existing models using scale mixtures of normals   
+\item Nonlinear deep learning models (NICE)
+\end{itemize}
+The  advantages include avoiding approximate estimation techniques, simulation-based inference and prediction and envelope methods for optimisation via Bayes MAP procedures.
+
+The rest of our paper is outlined as follows. The next subsection describes connections with previous work. Section 2 provides a unifying framework for super-Gaussian source distributions. Section 3 discusses envelope methods to provide fast optimisation methods. Section 4 illustrates our methodology. Finally, Section 5 concludes with directions for future research. 
+
+\subsection{Connections with Previous Work}
+
+Linear independent component analysis (ICA) is central to blind source separation and has many fields of application.
+Our work builds on the seminal work of MacKay (1994) who interprets ICA is latent variable modeling. With this interpretation, MacKay shows that the original blind separation algorithm of Bell and  Sejnowski (1995) can be viewed as a MAP estimator from the marginalised likelihood. 
+The latent variable model with a separable distribution on
+the hidden states. 
+
+The hallmark of ICA methods is the use of a super-Gaussian distribution over hidden states. Surprisingly, this leads to identification where traditional Gaussian modeling assumptions do not.  A linear mixing of Gaussians is itself Gaussian, so de-mixing is impossible. Hence the source distribution $p(s)$ has to have heavy tails (a.k.a. super-Gaussian) and the easiest way to achieve this is  via scale mixtures of normals, 
+
+Nonlinear ICA models have been proposed by Hyvarinen and Palmer (1999), Deco and Bvana (1995), Valpdaetal (2003) although identification can be challenging. KheXX et al (2020) provides recent identification results.
+Camuto et al (2021) combine a linearly independent component analysis (ICA) with nonlinear bisective feature maps (from flow-based methods). For non-square ICA, they can assume the number of sources is less than the data dimensionality -- thus achieving better unsupervised latent factor discovering than other ICA flow-based methods. 
+\citet{dinh2014nice} discuss NICE deep generative models with nonlinear invertible neural networks, building on the work of Deco (1994), \citet{comon1991blind} and \citet{pearlmutter1996context} and Malthouse. (1998).
+Recent work includes Bayesian ICA models of  \citep{donnat2019constrained}
+
+\section{Deep Bayesian Independent Components}
+
+We begin with linear independent component models. 
+The goal of ICA is to  attempt to recover source signals $\bm s$ from observations $\bm x$ which are linear mixtures (with unknown coefficients $\bm V$) of the source signals
+\begin{align*}
+\bm x &= \bm As\\
+\bm W &= \bm A^{-1}
+\end{align*}
+This can be interpreted as a Bayesian hierarchical model with a degenerate first stage. 
+Let $s_i$, $1\leq i \leq S$ denote a set of sources. We observe data $x_j$, $1\leq j\leq K$ which are linear mixtures of sources 
+$$ \bm x = A \bm s  \; \; {\rm with} \; \;  p(\bm s) = \prod_{i=1}^S p_i(s_i) $$
+where $A$ is the mixing matrix. We wish to estimate $W=A^{-1}$. 
+
+The sources $ \bm s $ have an independent components distribution and can be viewed as latent variables. Moreover, by introducing auxiliary variables $\lambda$ where 
+$$p(\bm s) = \int p(\bm s|\lambda)p(\lambda) d\lambda $$ we can develop EM and MCMC algorithms using the joint posterior $ p( \bm s , \lambda | \bm x ) $.
+
+We see a sequence of $N$ data vectors, $x_n$ from original sources $s_n$. Let $\bm{x} = (x_1, ..., x_n)$  with likelihood 
+$$
+p(\bm{x} | W) = \prod_{i=1}^{S} p_i(W_i^Tx) det(W)
+$$  
+where $det(W)$ is the Jacobian from the inverse map, $\bm s = W \bm x$. 
+
+The joint  distribution  of souces and latent variables is is given by 
+$$
+p(\bm s,\lambda | \bm  x) = \frac{p(\bm x| \bm s) p(\bm s|\lambda)p(\lambda)}{p(\bm x)}
+$$
+where 
+$$
+p(x^{(n)} | W) = \int \prod_{j=1}^K \delta(x^{(n)}_j - A_{ji}s^{(n)}_j) \prod_{i=1}^S p_i(s^{(n)}_i)
+$$
+and so, 
+$$
+\log p( x^{(n)} | W) = \log\det W + \sum_i \log p_i(W_{ij} x_j)
+$$
+As $p_i(W_{ij}x_j)$ is scale mixture of normals, the conditional moments are easily calculated. 
+
+The Bayes MAP estimator, with parameter prior $p(w) \equiv 1$),is then given by 
+$$
+\arg\max_{\bm W} p(W|x) = \arg\max_{\bm{W}} \log p(x|W) 
+$$
+Following \citet{fevotte2004bayesian}, we can also provide MCMC algorithms by iterating the conditionals \\
+
+
+
+The joint likelihood on observables and hidden states is given by
+$$
+p(  \bm x , \bm s | A )  = \delta( \bm x - A \bm s ) p(\bm s) 
+$$
+Inference can be performed in one of two ways  (MacKay, 1994). Either as a latent variable model which we will analyse in the next section or
+via MAP algorithms directly on the marginal likelihood
+\begin{align*}
+p( \bm x | A )   &= \int p(\bm x|V,\bm s)p(\bm s) d \bm s  =  \int \delta( \bm x - A \bm s ) p(\bm s) d \bm s \\
+p( \bm x | A )  & = \frac{1}{ det(V) } \prod_{i=1}^k  p_i (  A_{ij}^{-1} x_j) 
+\end{align*}
+where we have used the fact that $ \int \delta(x - As ) f(s) ds = |A|^{-1} f(x/A) $. 
+
+We can optimise the log-likelihood using envelope methods, see Section 3.2.
+
+\citet{mackay1996maximum} shows how to interpret the heuristic algorithms of \citet{bell1995information} as a MAP estimation procedure from this marginal likelihood. In the case of noise, $x = As + \epsilon$, we still have a scale mixture of normals framework -- and EM algorithm can be found. See \citep{fevotte2004bayesian}.
+
+\section{Super-Gaussian Source Distributions}
+To identify $W$, it is well known that one needs to use a heavy-tailed super-Gaussian distribution. For example, recommendations in the literature include" 
+\begin{enumerate}
+	\item Finite mixtures
+	$$
+	p(s) = \prod_{i=1}^S \sum_{\lambda_i=1}^{M_i} p(s_i(\lambda_i)) p(\lambda_i)
+	$$
+	where $p(\lambda) \sim Gamma$. See \citet{hinton2001new}. Constrained EM for ICA.
+	\item $p(s_i) \sim 1/\cosh(s)$. See \citep{mackay1996maximum}
+	\item Jeffreys prior. $p(s) \sim 1/|s|$. See \citep{fevotte2006blind}
+	\item $t$-distribution. $$p(s_i) = \int_0^\infty \NormRV(0, \lambda_i) p(\lambda_i) d\lambda_i $$
+	where $\lambda_i \sim InvGamma$. See \citep{fevotte2004bayesian}
+\end{enumerate}
+Other proposals include the scaled Cauchy \citep{mackay1996maximum}:
+$$
+p(s) \sim 1/\cosh^\beta(s/\beta)
+$$
+In the limit $\beta \rightarrow 0$ or $\rightarrow \infty$, we get Lasso or normal. Deso (1996), 
+
+
+
+\subsection{MacKay source  distribution $ 1/\cosh (s)$}
+
+Our key insight is that we can  write $s$ as a scale mixture of normals
+\begin{equation}
+s|\tau \sim N(0, \frac{1}{4\tau}),\; \tau \sim PG(1,0)
+\end{equation}
+due to the following equation
+\begin{equation}
+\frac{1}{\cosh(s)} = \int_{0}^{\infty} e^{-2\tau t^2}p(\tau) d\tau.
+\end{equation}
+Therefore, the location parameter $\theta$ is also a normal scale mixture,
+\begin{align}
+\theta|v,\tau \sim N\left(0, \frac{v^2}{4\tau}\right),\; v\sim p(v), \tau\sim PG(1,0)
+\end{align}
+The $ 1 /\cosh (s)$-source distribution can also be written as a transformation of a horseshoe prior \citep{carvalho2010horseshoe}.
+This provides a link with the non-Gaussianity tail behaviour for blind separation and that of sparse signal extraction. A similar framework to horseshoe and optimal rates of reconstruction is an area of future research. 
+
+Lasso as a limit. $ 1/cosh^\beta $ as $ \beta \rightarrow 0 $.
+
+The $ PG(b,0) $ distribution satisfies: $ E ( \exp( - \omega t ) ) = 1 / \cosh^b ( \sqrt{ t / 2} ) $ where
+$$
+\omega = \frac{1}{2 \pi^2 } \sum_{k=1}^\infty \frac{ Ga(b,1 ) }{ ( k - \half )^2 } 
+$$
+Double exponential (Lasso) in the limit as $ \beta  \rightarrow 0 $.
+
+
+Can we link the posterior of $v$,  $p(v|x, \sigma) = \int p(v, \tau|x, \sigma)d\tau$, with MacKay update equation:
+$$
+\Delta (v^{-1}) \propto v - \tanh(v^{-1}x)\cdot x
+$$
+
+MacKay section 2.4 point 2,3.
+Jeffrey procedure:
+$$
+\frac{1}{|s|} = \int N(s | 0, v) \frac{1}{v} dv
+$$
+Updates: 
+$$
+p(s|v, A, x) = \prod_{i} p(s_i | v, A, x)
+$$
+where $p(s)$ is $N(\mu_s, \Sigma_s)$ and $\mu_s = \frac{1}{\sigma^2}\sum_s A^Tx_k$ and $\Sigma_s = (\frac{1}{\sigma^2} A^TA + diag(v_k)^{-1})^{-1}$.\\
+Update $A$: the row of $A$ are independent a posterior.\\
+Update $v$: $p(v|s) = \prod_{i,k} p(v_{i_lk} | s_{i_lk})$
+
+
+
+\subsection{Envelope Optimisation Methods}
+Mixture: $ p( x  ) = \int p( x , \lambda ) d \lambda $
+
+Envelope: $ p( x) = \sup_{\lambda > 0} p( x , \lambda )  $ 
+
+$ \lambda $ is an  auxiliary variable. Geman and Yang 
+
+The key result for $1/\cosh$ is given in Polson and Scott (2016):
+\begin{equation}
+	\frac{1}{\cosh(x)} \propto \int_{0}^{\infty} N(x | 0, \lambda^{-1})\cdot p_I(\lambda) d\lambda = \sup_{\lambda\geq 0} \left\{N(x | 0, \lambda^{-1} \cdot p_V(\lambda))\right\}
+\end{equation}
+where $p_I(\lambda) \sim 4\cdot PG(1,0)$ is the density of Polya-Gamma distribution. \\
+
+Link with Proximal Algorithms/sub-differentials/EM if differentiable
+
+
+Speeds up ICA algorithms.  
+
+
+Gradient based avoids matrix inversion and auxiliary variables dynamically adjusts step-sizes.
+Lets you perform large step sizes at the beginning. Fast convergence.
+
+
+
+Envelope method:
+
+If $p(x) = e^{ - \phi (x ) } = N ( x | 0 , \lambda^{-1} ) p(\lambda) d\lambda \propto \sup_{ \lambda \geq 0 } N ( x | 0 , \lambda^{-1} ) p_E ( \lambda ) $, where  $\phi(x) = \theta(x^2/2) = \inf_{\lambda\geq 0} \left\{\half \lambda x^2 - \theta^\star(\lambda)\right\}$ and $\theta^\star$ is the dual of $\theta$, then  $ \hat{\lambda} = \phi^\prime ( x ) / x $ and $ E( \lambda | x ) = \phi^\prime ( x ) / x $.
+
+Example.
+$$
+\log \cosh (x/2) = \inf_{\lambda\geq 0} \left\{ \frac{\lambda}{2} x^2 - \theta^*(\lambda)\right\},
+$$
+$$
+\hat\lambda(x) = E_{PG}(\lambda|x) = \frac{1}{2x}\tanh(\frac{x}{2})
+$$
+
+where $\log\cosh$ is a scale mixture of Polya-Gamma distributions. \\
+
+Bouchaud: 
+We have a sum of $\log\cosh$
+$$
+\sum_{n=1}^N\sum_{k=1}^K \log\cosh(w_{ij} x_j)
+$$
+A tighter bound given 
+$$
+\log(1+e^x) \leq \lambda(\xi) (x^2-\xi^2) + \frac{1}{2}(x-\xi) + \log(1+e^\xi), \forall \xi\in\mathbb{R}
+$$
+where $\lambda(\xi)= \frac{1}{2\xi} (\frac{1}{1+e^{-\xi}} - \frac{1}{2})$ ($\tanh$). Equality holds when $x = \xi$.\\
+
+Two views of likelihood for ICA (Mackay, 1994).
+
+The posterior of $\bm s$ given $\bm x$ is, 
+\begin{align*}
+p(\bm s| \bm x) &= \frac{1}{(2\pi \sigma^2)^{q/2}}\exp\left\{-\frac{1}{2\sigma^2}(\bm{x - Vs})'(\bm{x - Vs})\right\} p(\bm s)\\
+&= h(\bm s) \exp\left\{\bm{\eta's} - \frac{1}{2\sigma^2}\bm{x'x} -\log f(\bm x) \right\}\\
+&= h(\bm s) \exp\left\{\bm{\eta's} - \psi(\bm\eta) \right\}
+\end{align*}
+where
+\begin{align*}
+\bm\eta &= \frac{1}{\sigma^2}\bm{V'x} \\
+h(\bm s) &= \frac{1}{(2\pi \sigma^2)^{q/2}} \exp\left\{-\frac{1}{2\sigma^2} \bm{s'V'Vs}\right\} p(\bm s)\\
+f(\bm x) &= \int  h(\bm s) \exp\left\{\bm{\eta's} - \frac{1}{2\sigma^2}\bm{x'x} \right\} d\bm s\\
+\psi(\bm \eta) &= \frac{1}{2\sigma^2}\bm{x'x} +\log f(\bm x) = \frac{\sigma^2}{2}\bm{\eta'WW'\eta} + \log f(\sigma^2 \bm{W'\eta})
+\end{align*}
+Therefore,
+\begin{align*}
+E(\bm s | \bm x) &= \frac{\partial\psi(\bm\eta)}{\partial \bm\eta}\\
+&= \bm{Wx} + \sigma^2\bm W\frac{\partial}{\partial \bm x}\log f(\bm x) \\
+&= \frac{\int h(\bm s)\exp\{\bm{\eta's}\} \bm s d\bm s}{\int h(\bm s)\exp\{\bm{\eta's}\} d\bm s} \\
+\frac{\partial}{\partial \bm x}\log f(\bm x) &= \frac{1}{\sigma^2}\left(\bm{V} \frac{\int h(\bm s)\exp\{\bm{\eta's}\} \bm s d\bm s}{\int h(\bm s)\exp\{\bm{\eta's}\} d\bm s} - \bm x\right)
+\end{align*}
+
+
+\section{Auxiliary-Function-Based EM Algorithm}
+
+The EM algorithm alternates between an $E$-step (expectation) and an $M$-step (maximisation) defined by 
+\begin{align*}
+{\rm E \; step} & :   \; \; Q(W|W^{(g)})   = \int \log p(\bm W|\lambda,x) p(\lambda | \bm W^{(g)}, \bm x) d\lambda \\
+{\rm M \; step} & : \; \; W^{(g+1)}   = \arg\max_{\bm W} \; Q( \bm W| \bm W^{(g)}  ) 
+\end{align*} 
+From before, the log-likelihood is given by  the following objective function:
+\begin{equation}\label{obj}
+	l (\bm W) = \log\det \bm W - \sum_i \hat E\left[\phi \left(W_{ij}x_j\right)\right] 
+\end{equation}
+where $\hat{E}$ denote the sample average. 
+When $p(s) \propto 1/\cosh(s)$, then  $\phi(s) = \log\cosh(s)$. 
+
+MacKay directly solves the optimization problem with natural gradient descent algorithm. 
+We now exploit the auxiliary variable scale mixture of normals representation and show that this faster algorithm is equivalent to that of  Ono and Miyake (2001)
+
+The complete-data posterior is given by 
+\begin{align*}
+	p(\bm W, \bm  \lambda | \bm x) &= |\det\bm W|^N \cdot \prod_{n=1,i=1}^{N,S}  \frac{1}{\cosh\left(W_{ij}x_j^{(n)}\right)} \\
+	&\propto |\det\bm W|^N \cdot \prod_{n=1,i=1}^{N,S}  \int_{0}^\infty e^{-\frac{1}{2}\left(W_{ij}x_j^{(n)}\right)^2\lambda_{ni}} \sqrt{\lambda_{ni}}\cdot p_I(\lambda_{ni}) 
+	d\lambda_{ni} .
+\end{align*}
+\vspace{0.1in}
+
+\noindent  \textbf{E-step:} 
+	Since the conditional expectation of $\lambda_{ni}$ is 
+	$$
+	\hat\lambda_{ni} = \frac{\phi'\left(W_{ij}x_j^{(n)}\right)}{W_{ij}x_j^{(n)}} = \frac{\tanh\left(W_{ij}x_j^{(n)}\right)}{W_{ij}x_j^{(n)}},
+	$$
+	We calculate the conditional log posterior (up to a scale $1/N$) as 
+	\begin{align}
+		Q(\bm W | \bm W^{(t)}) &= \log\det \bm W - \sum_i \hat{E}\left[\frac{1}{2}\hat\lambda_{ni}\left(W_{ij}x_j\right)^2\right]\\
+		&=\log\det \bm W - \sum_i W_{i\cdot}'\hat{E}\left[\frac{\tanh\left(W_{ij}^{(t)}x_j\right)}{2W_{ij}^{(t)}x_j} xx'\right]W_{i\cdot}\\
+		&= \log\det \bm W - \sum_i W_{i\cdot}'Z_i^{(t)}W_{i\cdot}
+	\end{align}
+	where 
+	$$Z_i^{(t)} := \hat{E}\left[\frac{\tanh\left(W_{ij}^{(t)}x_j\right)}{2W_{ij}^{(t)}x_j} xx'\right] = \hat{E}\left[\frac{\phi'\left(W_{ij}^{(t)}x_j\right)}{2W_{ij}^{(t)}x_j} xx'\right]. $$
+
+\vspace{0.1in}
+\noindent  \textbf{M-step:} 
+	Maximizing $Q(\bm W | \bm W^{(t)})$ with respect to $\bm W$ is equivalent to solving the following system of equations 
+	\begin{equation}
+		\frac{1}{2}Z_i^{(t)} W_{i\cdot} - \frac{\partial}{\partial W_{i\cdot}} \log \det \bm W = 0, \, \forall i
+	\end{equation}
+	which reduces to
+	\begin{equation}
+		W_{j\cdot}' Z_i^{(t)} W_{i\cdot} = \begin{cases}
+			1 &\text{if } i=j\\
+			0 &\text{if } i\neq j
+		\end{cases}
+	\end{equation}
+Now we show that Ono's auxiliary-function-based optimization is exactly the same as our latent variable EM described above. 
+
+According to Theorem 1, Ono and Miyabe (2010),
+\begin{equation}
+	\phi(s) \leq \frac{\phi'(r)}{2r}|s|^2 + F(r), \, \forall r  \; \; {\rm with} \; F(r) = \phi(r) - \frac{r\phi'(r)}{2}
+\end{equation}
+Here equality holds if and only if $r = |s|$. Thus, the objective function (\ref{obj}) satisfies
+\begin{align}
+	l(\bm W) &= \arg\max_{\bm R} Q(\bm W, \bm R)\\
+	&=\arg\max_{\bm R}  \left\{ \log\det \bm W - \sum_i\hat{E}\left[ \frac{\phi'(r_i)}{2r_i}|W_{ij}x_j|^2 + F(r_i)\right]\right\}
+\end{align}
+Then we can maximize $J(\bm W, \bm R)$ in terms of $\bm W$ and $\bm R$ alternatively, the variables being iteratively updated as below
+
+\vspace{0.15in}
+
+	\noindent  \textbf{Step 1:}
+	Given $\bm W^{(t)}$,
+	$\bm R^{(t+1)} = \arg\max_{\bm R} J(\bm W^{(t)}, \bm R)$. 
+	
+	The solution is $r_i^{(t+1)} = \hat{E}\left[W_{ij}^{(t)} x_j\right]$, which results in
+	\begin{equation}
+		J(\bm W,  \bm R^{(t+1)})  =  \log\det \bm W - \sum_i W_{i\cdot}'Z_i^{(t)}W_{i\cdot} + C^{(t)}
+	\end{equation} 
+	where $C^{(t)}$ is a constant independent of $\bm W$. This is essentially the same of E-step above.
+	\noindent  \textbf{Step 2:} 
+	Given $\bm R^{(t+1)}$,  $\bm W^{(t+1)} = \arg\max_{\bm W} J(\bm W, \bm R^{(t+1)})
+	$. That is,
+	\begin{align}
+		\bm{W}^{(t+1)}
+		&= \arg\max_{\bm W} \left\{\log\det \bm W - \sum_i W_{i\cdot}'Z_i^{(t)}W_{i\cdot}\right\}
+	\end{align}
+	This is the same as M-step.
+
+
+\section{Applications}
+
+\subsection{Full MCMC vs. MacKay}
+
+Let $i$ be observation index, $k$ the row index of $v$, $j$ the column index of $v$. $X = SV' + \epsilon$ where $X$ is $n\times d$ and $V$ is $d\times d$. 
+
+
+For the $i$-th observation, $x_i = V s_i$.
+
+	\begin{align*}
+		s_{ij} | x, v,\tau, s_{ij'} &\sim N\left(\frac{\left(XV-SV'V+S\cdot\text{diag}(V'V)\right)_{ij}}{\text{diag}(V'V)_{jj} + 4\tau_{ij}^2\sigma^2}, \frac{\sigma^2}{\text{diag}(V'V)_{jj} + 4\tau_{ij}^2 \sigma^2}\right) \\
+		v_{kj} | x, s, \tau, v_{kj'} &\sim N\left(\frac{\left(X'S-VS'S+V\cdot\text{diag}(S'S)\right)_{kj}}{\text{diag}(S'S)_{jj} + (\sigma/\sigma_2)^2}, \frac{\sigma^2}{\text{diag}(S'S)_{jj} + (\sigma/\sigma_2)^2} \right)\\
+		\tau_{ij} | x, s, v &\sim PG(1, |2s_{ij}|)
+	\end{align*}
+
+$n=500, d=4, \sigma = 0.01, \sigma_2 = 1. \epsilon \sim N(0, \sigma^2), v_{ij} \sim N(0, \sigma^2)$. 
+\vspace{0.1in}
+
+	Correlations between $ \bm{\hat s}$ and $\bm{s}$ (just one run for illustration):
+	\begin{itemize}
+		\item MacKay: 0.988, 0.999, 0.997, 0.991
+		\item EM: 0.992, 0.997, 0.997, 0.994
+	\end{itemize}
+	
+	\vspace{0.1in}
+	Correlations after the noise $\sigma$ is increased to 2.
+	\begin{itemize}
+		\item MacKay: 0.532, 0.508, 0.665, 0.435
+		\item EM: 0.528, 0.521, 0.667, 0.434
+	\end{itemize}
+	
+	\vspace{0.1in}
+	Correlations after scaling up the first $\tau$ by 100 times and setting $\sigma = 0.1$.
+	\begin{itemize}
+		\item MacKay: 0.275, 0.972, 0.837, 0.974
+		\item EM: 0.273, 0.973, 0.834, 0.977
+	\end{itemize}
+
+
+EM and MacKay seem to have similar performance in terms of recovering signals.
+
+\subsection{Full MCMC vs. NICE}
+
+\begin{enumerate}
+	\item Density Estimation: Dinh et al.(2015, NICE), Dinh et al.(2017, REAL NVP); Trippe and Turner(2018, Bayesian, radial flow); Huang et al.(2018, autoregressive flow); Ardizzon et al.(2019)
+	\item Variational Inference: Rezende and Mohamed(2016); Tomczak and Welling(2017, VAE with Householder flow)
+	\item Image Representation: Jacobsen et al.(2018, CNN)
+	\item Importance Sampling: Muller et al.(2019)
+	\item Construction of INN: Song et al.(2019, masked convolution); Behrmann et al.(2019, ResNet)	
+	\item Latent Factor Model: \begin{align}
+		y &= F'\theta + \epsilon\\
+		X &= h(F)\\
+		F &\sim N(0, I_p),\, \theta \sim p(\theta)
+	\end{align}
+	Here $(X, y)$ are observed data, $\epsilon$ is Gaussian noise,  $h$ is an invertible neural network and $F$ are the latent factors. 
+	
+	The likelihood is 
+	\begin{align*}
+		p(X, y | \theta) &= p(y | X, \theta)p(X|\theta)\\
+		&= p_y(y | h^{-1}(X), \theta) p_F(h^{-1}(X)) \Big | \frac{\partial h^{-1}}{\partial x}\Big | 
+	\end{align*}
+	with both $p_y$ and $p_F$ Gaussian densities and the determinant of Jacobian easy to compute. Therefore we can estimate $h$ and $\theta$ using the loss function 
+	$$
+	L(h, \theta) = \sum_{i=1}^N \left\{\lambda \Vert y_i - h^{-1}(x_i)'\theta\Vert^2 +  \Vert h^{-1}(x_i) \Vert^2 - \log \Big | \frac{\partial h^{-1}}{\partial x}\Big |(x_i) \right\} - \log p(\theta)
+	$$
+	
+	Two-step minimization: for $t=1,2,...$
+	\begin{enumerate}
+		\item $\hat h^{(t)} = \hat h^{(t-1)} - \eta \nabla L(h, \hat\theta^{(t-1)})$
+		\item $\hat \theta^{(t)} = \arg\min_\theta L(\hat h^{(t)}, \theta)$, or draw samples from the posterior $\propto \exp\left(-L(\hat h^{(t)}, \theta)\right)$.
+	\end{enumerate}
+	
+	\item Bayesian Inference: Detommaso et al.(2019, hierarchical)\\
+	The function $T$ moves in the normalizing direction: a complicated and irregular data distribution $p_w(w)$ towards the simpler, more regular or “normal” form, of the base measure $p_z(z)$. \\
+	
+	Let $w := [y, x] \in \mathbb{R}^{m+d}$ and $T(w):= [T^y(y), T^x(x, y)] \in  \mathbb{R}^{m+d}$. The inverse function $S^{-1} = T$ is denoted as $S(z) := [S^{y}(z_y), S^{x}(z_x, z_y)]$ where $S^{y} = (T^y)^{-1}$. We assume $z \sim N(0, I_{m+d})$. \\
+	
+	As $p_z= p_{z_y} p_{z_x|z_y} $ and $S^{y}$ pushes forward the base density $p_{z_y}$ to $p_y$,  it can be shown that $S^x(\cdot, z_y)$ pushes forward the base density $p_{z_x|z_y}(\cdot | z_y)$ to the posterior density $p_{x|y}(\cdot | y)$, when $z_y = T^y(y)$. To sample from $p_{x|y}$, we simply sample $z_x \sim N(0, I_d)$ and calculate $x = S^{x}(z_x, z_y) = S^{x}(z_x, T^{y}(y))$, since $p_{z_x|z_y} = p_{z_x}$.
+	
+	\item Sliced Inverse Regression, Particle Filtering, sufficient statistics (low dimensional non invertible map).
+	\item Possible Generalization: Lopes et al.(2012, Bayesian with a smile) 
+	\item Brillinger example when the source $\bm{s}$ (or equivalently $\bm W$) is observed. 
+
+\end{enumerate}
+
+
+\section{Discussion}
+
+High dimensional feature extraction has been a central tool in modern day applications. Pattern matching methods such as deep learning compose nonlinear maps to find features. Nonlinear ICA methods can be notoriously hard to learn and recently combinations of flow-based methods and ICA have been used. We have developed a framework for optimization and posterior simulation using auxiliary-based methods. This is a fruitful area for future research and implementation of fully Bayesian methods.  
+
+
+\subsection{Deep Generative Models}
+
+Relaxing the linearity leads to deep generative models.
+
+Hence we can also interpret deep generative models as latent variable models----and provide inference using scale mixture priors and MCMC.
+
+Hadamard products for $ \cosh $ is 
+$$
+\cosh (s) = \prod_{i=1}^\infty \left ( 1 + \frac{s^2}{(n-\half)^2 \pi^2} \right )
+$$
+Define GGC random variables (Devroye and Biane, Pitman and Yor)
+$$
+C_1  \stackrel{D}{=}  \sum_{n=1}^\infty \frac{ \Gamma_{1,n} }{ \left ( n - \frac{1}{2} \right )^2 }  \; \; {\rm with} \; \; \mathbb{E} \left ( e^{ - \half s^2 C_1 } \right ) = \frac{1}{ \cosh  (s) } .
+$$
+
+Iterative Algorithm
+\begin{align*}
+x^{(t+1)} &= \arg_x \min_\lambda \left\{ \half ( y-x )^2 + \half \lambda^{(t)}  x^2 \right \}  \\
+\lambda^{(t+1)} &=  \phi^\prime ( x^{(t+1)} ) / x^{(t+1)} \\
+\end{align*}
+Auxili
+
+
+% \section{References}
+\bibliographystyle{apalike}
+\bibliography{hs-review}
+\end{document}
